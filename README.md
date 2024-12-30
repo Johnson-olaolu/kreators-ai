@@ -35,7 +35,7 @@ This is a robust Node.js/Express backend application built with TypeScript. The 
 
 ## API Endpoints
 
-- Auth: `/api/auth` (register, login, email verification)
+- Auth: `/api/auth` (register, login, email verification , device management)
 - Users: `/api/user` (CRUD operations, profile management)
 
 ## Security Features
