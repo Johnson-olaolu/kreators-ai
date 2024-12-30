@@ -7,10 +7,11 @@ import jwt from "jsonwebtoken";
 import { LoginDto } from "./dto/login.dto";
 import { sendVerificationEmail, sendWelcomeEmail } from "../services/mail.service";
 import { RegisterDto } from "./dto/register.dto";
+import { Device } from "./models/device.model";
 
 // Register new user
 export const register = expressAsyncHandler(async (req: Request<{}, {}, RegisterDto>, res: Response) => {
-  const { email, password, firstName, lastName } = req.body;
+  const { email, password, firstName, lastName, deviceId, deviceName } = req.body;
 
   // Check if user exists
   const userExists = await User.findOne({ email });
@@ -27,9 +28,21 @@ export const register = expressAsyncHandler(async (req: Request<{}, {}, Register
   });
 
   if (user) {
-    const token = jwt.sign({ user: { id: user._id, email: user.email } }, process.env.JWT_SECRET || "", {
-      expiresIn: process.env.JWT_EXPIRES_IN,
-    });
+    let token = "";
+    const foundDevice = await Device.findOne({ email: user.email, deviceId });
+    if (foundDevice) {
+      token = foundDevice.token;
+    } else {
+      const newDevice = await Device.create({
+        email: email,
+        deviceId,
+        deviceName,
+        token: jwt.sign({ user: { id: user._id, email: user.email }, deviceId }, process.env.JWT_SECRET || ""),
+      }).catch((err) => {
+        throw new AppError(err.message, 500);
+      });
+      token = newDevice.token;
+    }
 
     // send welcome email
     const registrationToken = jwt.sign({ email: user.email }, process.env.JWT_SECRET || "", { expiresIn: "1h" });
@@ -60,7 +73,21 @@ export const login = expressAsyncHandler(async (req: Request<{}, {}, LoginDto>, 
       req.login(user, { session: false }, async (error: Error | null) => {
         if (error) return next(error);
         const body = { id: user._id, email: user.email };
-        const token = jwt.sign({ user: body }, process.env.JWT_SECRET || "");
+        let token = "";
+        const foundDevice = await Device.findOne({ email: user.email, deviceId: req.body.deviceId });
+        if (foundDevice) {
+          token = foundDevice.token;
+        } else {
+          const newDevice = await Device.create({
+            email: user.email,
+            deviceId: req.body.deviceId,
+            deviceName: req.body.deviceName,
+            token: jwt.sign({ user: body, deviceId: req.body.deviceId }, process.env.JWT_SECRET || ""),
+          }).catch((err) => {
+            throw new AppError(err.message, 500);
+          });
+          token = newDevice.token;
+        }
         return res.json({
           success: true,
           message: "User Logged in successfully",
@@ -108,4 +135,15 @@ export const verifyEmail = expressAsyncHandler(async (req: Request, res: Respons
     }
     res.json({ message: "Email verified successfully" });
   });
+});
+
+export const getDevices = expressAsyncHandler(async (req: Request, res: Response) => {
+  const devices = await Device.find({ email: (req.user as IUser)?.email });
+  res.json({ message: " Devices fetched successfully", devices });
+});
+
+export const deleteDevice = expressAsyncHandler(async (req: Request, res: Response) => {
+  const { deviceId } = req.params;
+  const device = await Device.deleteOne({ deviceId });
+  res.json({ message: "Device deleted successfully", device });
 });
